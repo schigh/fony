@@ -1,3 +1,7 @@
+[![Build Status](https://travis-ci.org/schigh/fony.svg?branch=master)](https://travis-ci.org/schigh/fony)
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/schigh/fony)](https://goreportcard.com/report/github.com/schigh/fony)
+
 # fony
 A phony endpoint simulator for your integration tests
 

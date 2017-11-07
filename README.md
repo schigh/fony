@@ -48,6 +48,9 @@ Create a json file with a list of your endpoints like so:
 Use `docker-compose` to run the `fony` command.  Be sure to set the `GOBIN` environment variable to `/go/bin`.
 See the `docker-compose.yml` file in this repository for an example.
 
+## Things that need done
+- All the tests
+
 ## Known bugs
 Headers are not parsing properly at the moment
 

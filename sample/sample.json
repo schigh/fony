@@ -1,0 +1,28 @@
+{
+  "global_headers": {
+    "X-Fony": "true"
+  },
+  "endpoints": [
+    {
+      "url": "/foo/bar",
+      "verb": "GET",
+      "response_payload": {
+        "foo": "bar",
+        "fizz": "buzz"
+      },
+      "response_code": 200
+    },
+    {
+      "url": "/herp/derp",
+      "verb": "POST",
+      "response_payload": [
+        {
+          "duck": 1,
+          "cow": true,
+          "pig": null
+        }
+      ],
+      "response_code": 200
+    }
+  ]
+}

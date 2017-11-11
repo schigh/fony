@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -15,23 +16,31 @@ import (
 	"goji.io/pat"
 )
 
-// PhonyEndpoint represents a single endpoint served by fony
-type PhonyEndpoint struct {
-	URL             string            `json:"url"`
-	Verb            string            `json:"verb"`
-	ResponseHeaders map[string]string `json:"response_headers"`
-	ResponsePayload interface{}       `json:"response_payload"`
-	ResponseCode    int               `json:"response_code"`
+// FonyResponse contains the data returned in a specific response
+type FonyResponse struct {
+	Headers    map[string]string `json:"headers"`
+	Payload    interface{}       `json:"payload"`
+	StatusCode int               `json:"status_code"`
 }
 
-// PhonySuite encloses the suite of endpoints served by fony
-type PhonySuite struct {
+// FonyEndpoint represents a single endpoint served by fony
+type FonyEndpoint struct {
+	URL       string         `json:"url"`
+	Verb      string         `json:"verb"`
+	Responses []FonyResponse `json:"responses"`
+}
+
+// FonySuite encloses the suite of endpoints served by fony
+type FonySuite struct {
 	GlobalHeaders map[string]string `json:"global_headers"`
-	Endpoints     []*PhonyEndpoint  `json:"endpoints"`
+	Endpoints     []FonyEndpoint    `json:"endpoints"`
 }
 
 // patFunction is an alias to pat http verb functions
 type patFunction func(url string) *pat.Pattern
+
+// FonyPayloadIndexHeader is the index of the payload we wish to see for a given endpoint
+const FonyPayloadIndexHeader = "X-Fony-Index"
 
 var (
 	suiteFile string
@@ -41,7 +50,8 @@ func init() {
 	flag.StringVar(&suiteFile, "f", "./suite.json", "Absolute path to the fony suite file")
 }
 
-func setup() (*PhonySuite, bool) {
+// setup prepares the suite for service
+func setup() (*FonySuite, bool) {
 	flag.Parse()
 
 	fileInfo, err := os.Stat(suiteFile)
@@ -60,7 +70,7 @@ func setup() (*PhonySuite, bool) {
 		return nil, false
 	}
 
-	suite := &PhonySuite{}
+	suite := &FonySuite{}
 	ext := filepath.Ext(suiteFile)
 	switch ext {
 	case ".json":
@@ -76,19 +86,8 @@ func setup() (*PhonySuite, bool) {
 	return suite, true
 }
 
-func register(suite *PhonySuite) (*goji.Mux, bool) {
-	mux := goji.NewMux()
-	for _, ep := range suite.Endpoints {
-		if err := processEndpoint(ep, mux, suite.GlobalHeaders); err != nil {
-			log.Errorf("Error registering endpoint %s: %+v", ep.URL, err)
-			return nil, false
-		}
-	}
-
-	return mux, true
-}
-
-func getPatFunction(ep *PhonyEndpoint) (patFunction, error) {
+// getPatFunction will get the appropriate pat function based on HTTP verb
+func getPatFunction(ep FonyEndpoint) (patFunction, error) {
 	verb := strings.ToUpper(ep.Verb)
 	switch verb {
 	case "GET":
@@ -110,32 +109,88 @@ func getPatFunction(ep *PhonyEndpoint) (patFunction, error) {
 	return nil, fmt.Errorf("unknown HTTP method: %s", verb)
 }
 
-func processEndpoint(ep *PhonyEndpoint, mux *goji.Mux, globals map[string]string) error {
+func errOut(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(500)
+	w.Write([]byte("Fony failed to process this endpoint.  Check your logs to find the root cause"))
+}
+
+// processEndpoint will set each endpoint and handler in the muxxer
+func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) error {
 	f, err := getPatFunction(ep)
 	if err != nil {
 		return err
 	}
 
 	mux.HandleFunc(f(ep.URL), func(w http.ResponseWriter, r *http.Request) {
+		// by default, all responses return this header.  It can be overwritten in the global
+		// headers or the endpoint-specific header
 		w.Header().Set("Content-Type", "application/json")
 		for k := range globals {
 			w.Header().Set(k, globals[k])
 		}
-		for k := range ep.ResponseHeaders {
-			w.Header().Set(k, ep.ResponseHeaders[k])
+
+		// get the index header if set
+		var index uint64
+		indexHeader := r.Header.Get(FonyPayloadIndexHeader)
+		if indexHeader != "" {
+			index, err = strconv.ParseUint(indexHeader, 10, 8)
+			if err != nil {
+				log.Errorf("header index parse error: %+v", err)
+				errOut(w)
+				return
+			}
 		}
 
-		data, err := json.Marshal(ep.ResponsePayload)
-		if err != nil {
-			log.Errorf("Payload marshal error: %+v", err)
+		var response *FonyResponse
+		numResponses := len(ep.Responses)
+
+		if numResponses > int(index) {
+			response = &ep.Responses[index]
+		} else if numResponses > 0 {
+			response = &ep.Responses[0]
+		} else {
+			// there must be at least one response
+			log.Error("There must be at least one response per endpoint")
+			errOut(w)
 			return
 		}
 
-		w.WriteHeader(ep.ResponseCode)
+		// specific endpoint headers will override globals if set
+		for k := range response.Headers {
+			w.Header().Set(k, response.Headers[k])
+		}
+
+		var data []byte
+		if response.Payload != nil {
+			data, err = json.Marshal(response.Payload)
+			if err != nil {
+				log.Errorf("payload marshal error: %+v", err)
+				return
+			}
+		}
+
+		if response.StatusCode == 0 {
+			response.StatusCode = 200
+		}
+		w.WriteHeader(response.StatusCode)
 		w.Write(data)
 	})
 
 	return nil
+}
+
+// register will register each endpoint in the muxxer
+func register(suite *FonySuite) (*goji.Mux, bool) {
+	mux := goji.NewMux()
+	for _, ep := range suite.Endpoints {
+		if err := processEndpoint(ep, mux, suite.GlobalHeaders); err != nil {
+			log.Errorf("Error registering endpoint %s: %+v", ep.URL, err)
+			return nil, false
+		}
+	}
+
+	return mux, true
 }
 
 func main() {

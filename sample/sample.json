@@ -6,29 +6,57 @@
     {
       "url": "/foo/bar",
       "verb": "GET",
-      "response_payload": {
-        "foo": "bar",
-        "fizz": "buzz"
-      },
-      "response_code": 200
+      "responses": [
+        {
+          "headers": {
+            "X-Herp": "DDDERP"
+          },
+          "payload": {
+            "foo": "bar",
+            "fizz": "buzz"
+          },
+          "status_code": 200
+        },
+        {
+          "headers": {
+            "X-Herp": "HHHERP"
+          },
+          "payload": {
+            "foo": "bark",
+            "fizz": "moo"
+          },
+          "status_code": 201
+        }
+      ]
     },
     {
       "url": "/herp/derp",
       "verb": "POST",
-      "response_payload": [
+      "responses": [
         {
-          "duck": 1,
-          "cow": true,
-          "pig": null
+          "headers": {
+            "X-Fony": "override"
+          },
+          "payload": [
+            {
+              "duck": 1,
+              "cow": true,
+              "pig": null
+            }
+          ],
+          "status_code": 200
         }
-      ],
-      "response_code": 200
+      ]
     },
     {
       "url": "/i/am/a/teapot",
       "verb": "GET",
-      "response_payload": {},
-      "response_code": 418
+      "responses": [
+        {
+          "payload": null,
+          "status_code": 418
+        }
+      ]
     }
   ]
 }

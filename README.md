@@ -2,7 +2,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/schigh/fony)](https://goreportcard.com/report/github.com/schigh/fony)
 
 # fony
-A phony endpoint simulator for your integration tests
+A phony endpoint simulator for all your phony endpoint simulation needs
 
 ### How to use
 Create a json file with a list of your endpoints like so:
@@ -50,10 +50,20 @@ If you have multiple responses for the same endpoint, you can specify which one 
 Use `docker-compose` to run the `fony` command.  Be sure to set the `GOBIN` environment variable to `/go/bin`.
 See the `docker-compose.yml` file in this repository for an example.
 
-## Things that need done
-- All the tests
+## Using a remote suite file
+Fony can use a remote suite file, provided it's accessible via GET at runtime.  To use this option, use the `SUITE_URL` environment variable, e.g.
+```
+> SUITE_URL=https://raw.githubusercontent.com/schigh/fony/master/sample/sample.json go run fony.go
+```
+or
+```
+> docker run -e "SUITE_URL=https://raw.githubusercontent.com/schigh/fony/master/sample/sample.json" schigh/fony
+```
 
 ## Caveats
 This project is meant to run in a Docker container.  The necessary go dependencies will be installed when the Dockerfile is built.  If you want to run this program locally, you will need to install the following dependencies via `go get`:
 - `github.com/sirupsen/logrus`
 - `goji.io`
+
+## Things that need done
+- All the tests

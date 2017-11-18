@@ -7,3 +7,7 @@ RUN go get -u github.com/sirupsen/logrus
 RUN go get -u goji.io
 RUN GOBIN=/go/bin go install fony.go
 
+EXPOSE 80
+
+CMD ["fony", "-f", "./fony.json"]
+

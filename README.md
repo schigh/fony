@@ -15,7 +15,7 @@ Create a json file with a list of your endpoints like so:
   "endpoints": [
     {
       "url": "/foo/bar",
-      "verb": "GET",
+      "method": "GET",
       "responses": [
         {
           "headers": {

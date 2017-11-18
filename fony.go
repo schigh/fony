@@ -26,7 +26,7 @@ type FonyResponse struct {
 // FonyEndpoint represents a single endpoint served by fony
 type FonyEndpoint struct {
 	URL       string         `json:"url"`
-	Verb      string         `json:"verb"`
+	Method    string         `json:"method"`
 	Responses []FonyResponse `json:"responses"`
 }
 
@@ -47,40 +47,65 @@ var (
 )
 
 func init() {
-	flag.StringVar(&suiteFile, "f", "./suite.json", "Absolute path to the fony suite file")
+	flag.StringVar(&suiteFile, "f", "./fony.json", "Absolute path to the fony suite file")
 }
 
 // setup prepares the suite for service
 func setup() (*FonySuite, bool) {
 	flag.Parse()
 
-	fileInfo, err := os.Stat(suiteFile)
-	if err != nil {
-		log.Errorf("fony suite file located at %s could not be found", suiteFile)
-		return nil, false
-	}
-	if fileInfo.IsDir() {
-		log.Errorf("the path at %s is a directory", suiteFile)
-		return nil, false
-	}
-
-	data, err := ioutil.ReadFile(suiteFile)
-	if err != nil {
-		log.Errorf("Error reading suite file: %+v", err)
-		return nil, false
-	}
-
 	suite := &FonySuite{}
-	ext := filepath.Ext(suiteFile)
-	switch ext {
-	case ".json":
-		if err = json.Unmarshal(data, suite); err != nil {
-			log.Errorf("Unable to parse suite file: %+v", err)
+
+	// look for the presence of a remote suite file
+	suiteURL := os.Getenv("SUITE_URL")
+	if suiteURL != "" {
+		log.Infof("Running remote suite file located at %s", suiteURL)
+		c := http.DefaultClient
+		resp, err := c.Get(suiteURL)
+		if err != nil {
+			log.Errorf("Error fetching remote suite file: %v", err)
 			return nil, false
 		}
-	default:
-		log.Errorf("Unknown file extension: %s.  Only json files are acceptable", ext)
-		return nil, false
+		defer resp.Body.Close()
+
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Errorf("Error reading remote file: %v", err)
+			return nil, false
+		}
+
+		if err = json.Unmarshal(data, suite); err != nil {
+			log.Errorf("Unable to parse remote suite file: %v", err)
+			return nil, false
+		}
+	} else {
+		fileInfo, err := os.Stat(suiteFile)
+		if err != nil {
+			log.Errorf("fony suite file located at %s could not be found", suiteFile)
+			return nil, false
+		}
+		if fileInfo.IsDir() {
+			log.Errorf("the path at %s is a directory", suiteFile)
+			return nil, false
+		}
+
+		data, err := ioutil.ReadFile(suiteFile)
+		if err != nil {
+			log.Errorf("Error reading suite file: %v", err)
+			return nil, false
+		}
+
+		ext := filepath.Ext(suiteFile)
+		switch ext {
+		case ".json":
+			if err = json.Unmarshal(data, suite); err != nil {
+				log.Errorf("Unable to parse suite file: %v", err)
+				return nil, false
+			}
+		default:
+			log.Errorf("Unknown file extension: %s.  Only json files are acceptable", ext)
+			return nil, false
+		}
 	}
 
 	return suite, true
@@ -88,7 +113,7 @@ func setup() (*FonySuite, bool) {
 
 // getPatFunction will get the appropriate pat function based on HTTP verb
 func getPatFunction(ep FonyEndpoint) (patFunction, error) {
-	verb := strings.ToUpper(ep.Verb)
+	verb := strings.ToUpper(ep.Method)
 	switch verb {
 	case "GET":
 		return pat.Get, nil
@@ -109,6 +134,7 @@ func getPatFunction(ep FonyEndpoint) (patFunction, error) {
 	return nil, fmt.Errorf("unknown HTTP method: %s", verb)
 }
 
+// errOut processes internal errors not related to the payload
 func errOut(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(500)
@@ -123,8 +149,9 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 	}
 
 	mux.HandleFunc(f(ep.URL), func(w http.ResponseWriter, r *http.Request) {
-		// by default, all responses return this header.  It can be overwritten in the global
+		// By default, all responses return this header.  It can be overwritten in the global
 		// headers or the endpoint-specific header
+		log.Infof("%s: %s", ep.Method, ep.URL)
 		w.Header().Set("Content-Type", "application/json")
 		for k := range globals {
 			w.Header().Set(k, globals[k])
@@ -136,7 +163,7 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 		if indexHeader != "" {
 			index, err = strconv.ParseUint(indexHeader, 10, 8)
 			if err != nil {
-				log.Errorf("header index parse error: %+v", err)
+				log.Errorf("header index parse error: %v", err)
 				errOut(w)
 				return
 			}
@@ -165,7 +192,7 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 		if response.Payload != nil {
 			data, err = json.Marshal(response.Payload)
 			if err != nil {
-				log.Errorf("payload marshal error: %+v", err)
+				log.Errorf("payload marshal error: %v", err)
 				return
 			}
 		}
@@ -185,7 +212,7 @@ func register(suite *FonySuite) (*goji.Mux, bool) {
 	mux := goji.NewMux()
 	for _, ep := range suite.Endpoints {
 		if err := processEndpoint(ep, mux, suite.GlobalHeaders); err != nil {
-			log.Errorf("Error registering endpoint %s: %+v", ep.URL, err)
+			log.Errorf("Error registering endpoint %s: %v", ep.URL, err)
 			return nil, false
 		}
 	}

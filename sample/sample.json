@@ -5,7 +5,7 @@
   "endpoints": [
     {
       "url": "/foo/bar",
-      "verb": "GET",
+      "method": "GET",
       "responses": [
         {
           "headers": {
@@ -31,7 +31,7 @@
     },
     {
       "url": "/herp/derp",
-      "verb": "POST",
+      "method": "POST",
       "responses": [
         {
           "headers": {
@@ -50,7 +50,7 @@
     },
     {
       "url": "/i/am/a/teapot",
-      "verb": "GET",
+      "method": "GET",
       "responses": [
         {
           "payload": null,

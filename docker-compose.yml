@@ -9,9 +9,9 @@ services:
       - "8888:80"
     volumes:
       - .:/go/src/github.com/schigh/fony
+      - ./sample/sample.json:/go/src/github.com/schigh/fony/fony.json
     environment:
       - GOBIN=/go/bin
-    command: ["fony", "-f", "sample/sample.json"]
 
 networks:
   local_default:

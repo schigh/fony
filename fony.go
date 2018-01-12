@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"goji.io"
@@ -18,22 +19,49 @@ import (
 
 // FonyResponse contains the data returned in a specific response
 type FonyResponse struct {
-	Headers    map[string]string `json:"headers"`
-	Payload    interface{}       `json:"payload"`
-	StatusCode int               `json:"status_code"`
+	// Headers are the expected headers returned in the fake response
+	Headers map[string]string `json:"headers"`
+
+	// Payload is the object (currently json only) returned in the response body
+	Payload interface{} `json:"payload"`
+
+	// StatusCode is the HTTP response code returned by the fake request
+	StatusCode int `json:"status_code"`
 }
 
 // FonyEndpoint represents a single endpoint served by fony
 type FonyEndpoint struct {
-	URL       string         `json:"url"`
-	Method    string         `json:"method"`
+	// URL is the endpoint url
+	URL string `json:"url"`
+
+	// Method is the HTTP method used to perform the fake request
+	Method string `json:"method"`
+
+	// Responses is the list of possible responses for any given endpoint
 	Responses []FonyResponse `json:"responses"`
+
+	// RunSequential will run all responses in order, and start at the
+	// first request if the list reaches its end
+	RunSequential bool `json:"run_sequential"`
 }
 
 // FonySuite encloses the suite of endpoints served by fony
 type FonySuite struct {
+	// GlobalHeaders are request headers applied to all requests
 	GlobalHeaders map[string]string `json:"global_headers"`
-	Endpoints     []FonyEndpoint    `json:"endpoints"`
+
+	// Endpoints is a list of fake endpoints
+	Endpoints []*FonyEndpoint `json:"endpoints"`
+}
+
+type endpointSequenceMap struct {
+	sync.RWMutex
+	sequences map[string]*endpointSequence
+}
+
+type endpointSequence struct {
+	capacity int
+	next     int
 }
 
 // patFunction is an alias to pat http verb functions
@@ -43,11 +71,14 @@ type patFunction func(url string) *pat.Pattern
 const FonyPayloadIndexHeader = "X-Fony-Index"
 
 var (
-	suiteFile string
+	suiteFile   string
+	port        string
+	sequenceMap *endpointSequenceMap
 )
 
 func init() {
 	flag.StringVar(&suiteFile, "f", "./fony.json", "Absolute path to the fony suite file")
+	flag.StringVar(&port, "p", "80", "http port (for local testing)")
 }
 
 // setup prepares the suite for service
@@ -56,12 +87,18 @@ func setup() (*FonySuite, bool) {
 
 	suite := &FonySuite{}
 
+	// this just makes sure the port flag can be parsed to an integer
+	_, err := strconv.ParseInt(port, 10, 32)
+	if err != nil {
+		log.Errorf("Error parsing port: %v", err)
+		return nil, false
+	}
+
 	// look for the presence of a remote suite file
 	suiteURL := os.Getenv("SUITE_URL")
 	if suiteURL != "" {
 		log.Infof("Running remote suite file located at %s", suiteURL)
-		c := http.DefaultClient
-		resp, err := c.Get(suiteURL)
+		resp, err := http.Get(suiteURL)
 		if err != nil {
 			log.Errorf("Error fetching remote suite file: %v", err)
 			return nil, false
@@ -112,7 +149,7 @@ func setup() (*FonySuite, bool) {
 }
 
 // getPatFunction will get the appropriate pat function based on HTTP verb
-func getPatFunction(ep FonyEndpoint) (patFunction, error) {
+func getPatFunction(ep *FonyEndpoint) (patFunction, error) {
 	verb := strings.ToUpper(ep.Method)
 	switch verb {
 	case "GET":
@@ -142,10 +179,23 @@ func errOut(w http.ResponseWriter) {
 }
 
 // processEndpoint will set each endpoint and handler in the muxxer
-func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) error {
+func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string) error {
 	f, err := getPatFunction(ep)
 	if err != nil {
 		return err
+	}
+
+	// if running sequentially, set the capacity with the next
+	// response pointing to the zero index.  Otherwise, set
+	// capacity to -1
+	if ep.RunSequential {
+		sequenceMap.sequences[ep.URL] = &endpointSequence{
+			capacity: len(ep.Responses),
+		}
+	} else {
+		sequenceMap.sequences[ep.URL] = &endpointSequence{
+			capacity: -1,
+		}
 	}
 
 	mux.HandleFunc(f(ep.URL), func(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +217,17 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 				errOut(w)
 				return
 			}
+		} else {
+			sequenceMap.Lock()
+			s := sequenceMap.sequences[ep.URL]
+			if s.capacity != -1 {
+				index = uint64(s.next)
+				s.next++
+				if s.next >= s.capacity {
+					s.next = 0
+				}
+			}
+			sequenceMap.Unlock()
 		}
 
 		var response *FonyResponse
@@ -193,6 +254,7 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 			data, err = json.Marshal(response.Payload)
 			if err != nil {
 				log.Errorf("payload marshal error: %v", err)
+				errOut(w)
 				return
 			}
 		}
@@ -202,6 +264,8 @@ func processEndpoint(ep FonyEndpoint, mux *goji.Mux, globals map[string]string) 
 		}
 		w.WriteHeader(response.StatusCode)
 		w.Write(data)
+
+		log.Infof("resp data: %s", string(data))
 	})
 
 	return nil
@@ -226,10 +290,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	sequenceMap = &endpointSequenceMap{
+		sequences: make(map[string]*endpointSequence, len(suite.Endpoints)),
+	}
+
 	mux, ok := register(suite)
 	if !ok {
 		os.Exit(1)
 	}
 
-	log.Fatal(http.ListenAndServe("0.0.0.0:80", mux))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), mux))
 }

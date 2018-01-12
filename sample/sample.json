@@ -6,6 +6,7 @@
     {
       "url": "/foo/bar",
       "method": "GET",
+      "run_sequential": true,
       "responses": [
         {
           "headers": {

@@ -1,4 +1,5 @@
 FROM golang:1.9-alpine
+MAINTAINER Steve High <steve.high@gmail.com>
 COPY ./ /go/src/github.com/schigh/fony
 WORKDIR /go/src/github.com/schigh/fony
 

@@ -3,3 +3,5 @@
 /docker-compose.yml
 /.git/
 /.idea/
+/vendor/
+/fony.json

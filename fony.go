@@ -55,7 +55,7 @@ type FonySuite struct {
 }
 
 type endpointSequenceMap struct {
-	sync.RWMutex
+	sync.Mutex
 	sequences map[string]*endpointSequence
 }
 
@@ -74,11 +74,13 @@ var (
 	suiteFile   string
 	port        string
 	sequenceMap *endpointSequenceMap
+	logger      *log.Entry
 )
 
 func init() {
 	flag.StringVar(&suiteFile, "f", "./fony.json", "Absolute path to the fony suite file")
 	flag.StringVar(&port, "p", "80", "http port (for local testing)")
+	logger = log.NewEntry(log.New())
 }
 
 // setup prepares the suite for service
@@ -90,45 +92,45 @@ func setup() (*FonySuite, bool) {
 	// this just makes sure the port flag can be parsed to an integer
 	_, err := strconv.ParseInt(port, 10, 32)
 	if err != nil {
-		log.Errorf("Error parsing port: %v", err)
+		logger.Errorf("Error parsing port: %v", err)
 		return nil, false
 	}
 
 	// look for the presence of a remote suite file
 	suiteURL := os.Getenv("SUITE_URL")
 	if suiteURL != "" {
-		log.Infof("Running remote suite file located at %s", suiteURL)
+		logger.Infof("Running remote suite file located at %s", suiteURL)
 		resp, err := http.Get(suiteURL)
 		if err != nil {
-			log.Errorf("Error fetching remote suite file: %v", err)
+			logger.Errorf("Error fetching remote suite file: %v", err)
 			return nil, false
 		}
 		defer resp.Body.Close()
 
 		data, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			log.Errorf("Error reading remote file: %v", err)
+			logger.Errorf("Error reading remote file: %v", err)
 			return nil, false
 		}
 
 		if err = json.Unmarshal(data, suite); err != nil {
-			log.Errorf("Unable to parse remote suite file: %v", err)
+			logger.Errorf("Unable to parse remote suite file: %v", err)
 			return nil, false
 		}
 	} else {
 		fileInfo, err := os.Stat(suiteFile)
 		if err != nil {
-			log.Errorf("fony suite file located at %s could not be found", suiteFile)
+			logger.Errorf("fony suite file located at %s could not be found", suiteFile)
 			return nil, false
 		}
 		if fileInfo.IsDir() {
-			log.Errorf("the path at %s is a directory", suiteFile)
+			logger.Errorf("the path at %s is a directory", suiteFile)
 			return nil, false
 		}
 
 		data, err := ioutil.ReadFile(suiteFile)
 		if err != nil {
-			log.Errorf("Error reading suite file: %v", err)
+			logger.Errorf("Error reading suite file: %v", err)
 			return nil, false
 		}
 
@@ -136,11 +138,11 @@ func setup() (*FonySuite, bool) {
 		switch ext {
 		case ".json":
 			if err = json.Unmarshal(data, suite); err != nil {
-				log.Errorf("Unable to parse suite file: %v", err)
+				logger.Errorf("Unable to parse suite file: %v", err)
 				return nil, false
 			}
 		default:
-			log.Errorf("Unknown file extension: %s.  Only json files are acceptable", ext)
+			logger.Errorf("Unknown file extension: %s.  Only json files are acceptable", ext)
 			return nil, false
 		}
 	}
@@ -152,23 +154,26 @@ func setup() (*FonySuite, bool) {
 func getPatFunction(ep *FonyEndpoint) (patFunction, error) {
 	verb := strings.ToUpper(ep.Method)
 	switch verb {
-	case "GET":
+	case http.MethodGet:
 		return pat.Get, nil
-	case "DELETE":
+	case http.MethodDelete:
 		return pat.Delete, nil
-	case "HEAD":
+	case http.MethodHead:
 		return pat.Head, nil
-	case "OPTIONS":
+	case http.MethodOptions:
 		return pat.Options, nil
-	case "PUT":
+	case http.MethodPut:
 		return pat.Put, nil
-	case "PATCH":
+	case http.MethodPatch:
 		return pat.Patch, nil
-	case "POST":
+	case http.MethodPost:
 		return pat.Post, nil
 	}
 
-	return nil, fmt.Errorf("unknown HTTP method: %s", verb)
+	err := fmt.Errorf("unknown HTTP method %s in endpoint: %+v", verb, ep)
+	logger.Error(err.Error())
+
+	return nil, err
 }
 
 // errOut processes internal errors not related to the payload
@@ -201,7 +206,7 @@ func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string)
 	mux.HandleFunc(f(ep.URL), func(w http.ResponseWriter, r *http.Request) {
 		// By default, all responses return this header.  It can be overwritten in the global
 		// headers or the endpoint-specific header
-		log.Infof("%s: %s", ep.Method, ep.URL)
+		logger.Infof("%s: %s", ep.Method, ep.URL)
 		w.Header().Set("Content-Type", "application/json")
 		for k := range globals {
 			w.Header().Set(k, globals[k])
@@ -213,7 +218,7 @@ func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string)
 		if indexHeader != "" {
 			index, err = strconv.ParseUint(indexHeader, 10, 8)
 			if err != nil {
-				log.Errorf("header index parse error: %v", err)
+				logger.Errorf("header index parse error: %v", err)
 				errOut(w)
 				return
 			}
@@ -239,7 +244,7 @@ func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string)
 			response = &ep.Responses[0]
 		} else {
 			// there must be at least one response
-			log.Error("There must be at least one response per endpoint")
+			logger.Error("There must be at least one response per endpoint")
 			errOut(w)
 			return
 		}
@@ -253,19 +258,21 @@ func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string)
 		if response.Payload != nil {
 			data, err = json.Marshal(response.Payload)
 			if err != nil {
-				log.Errorf("payload marshal error: %v", err)
+				logger.Errorf("payload marshal error: %v", err)
 				errOut(w)
 				return
 			}
 		}
 
+		// default to 200 if not set
 		if response.StatusCode == 0 {
-			response.StatusCode = 200
+			response.StatusCode = http.StatusOK
 		}
 		w.WriteHeader(response.StatusCode)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		w.Write(data)
 
-		log.Infof("resp data: %s", string(data))
+		logger.Debugf("resp data: %s", string(data))
 	})
 
 	return nil
@@ -276,7 +283,7 @@ func register(suite *FonySuite) (*goji.Mux, bool) {
 	mux := goji.NewMux()
 	for _, ep := range suite.Endpoints {
 		if err := processEndpoint(ep, mux, suite.GlobalHeaders); err != nil {
-			log.Errorf("Error registering endpoint %s: %v", ep.URL, err)
+			logger.Errorf("Error registering endpoint %s: %v", ep.URL, err)
 			return nil, false
 		}
 	}
@@ -299,5 +306,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), mux))
+	logger.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), mux))
 }

@@ -23,18 +23,18 @@ You can also add it directly to your orchestration config.  For example in `dock
 
 ```yml
 myfakeservice:
-	image: schigh/fony
-	environment:
-		- SUITE_URL=https://raw.githubusercontent.com/schigh/fony/master/sample/sample.json
+  image: schigh/fony
+  environment:
+    - SUITE_URL=https://raw.githubusercontent.com/schigh/fony/master/sample/sample.json
 ```
 
 You could also include a local suite file from within your project:
 
 ```yml
 myfakeservice:
-	image: schigh/fony
-	volumes:
-		- /path/to/suite/file.json:/go/src/github.com/schigh/fony/fony.json
+  image: schigh/fony
+  volumes:
+    - /path/to/suite/file.json:/go/src/github.com/schigh/fony/fony.json
 ```
 
 The fony container looks for a file `fony.json` in its `WORKDIR`. 

@@ -154,19 +154,19 @@ func setup() (*FonySuite, bool) {
 func getPatFunction(ep *FonyEndpoint) (patFunction, error) {
 	verb := strings.ToUpper(ep.Method)
 	switch verb {
-	case "GET":
+	case http.MethodGet:
 		return pat.Get, nil
-	case "DELETE":
+	case http.MethodDelete:
 		return pat.Delete, nil
-	case "HEAD":
+	case http.MethodHead:
 		return pat.Head, nil
-	case "OPTIONS":
+	case http.MethodOptions:
 		return pat.Options, nil
-	case "PUT":
+	case http.MethodPut:
 		return pat.Put, nil
-	case "PATCH":
+	case http.MethodPatch:
 		return pat.Patch, nil
-	case "POST":
+	case http.MethodPost:
 		return pat.Post, nil
 	}
 
@@ -264,13 +264,15 @@ func processEndpoint(ep *FonyEndpoint, mux *goji.Mux, globals map[string]string)
 			}
 		}
 
+		// default to 200 if not set
 		if response.StatusCode == 0 {
 			response.StatusCode = http.StatusOK
 		}
 		w.WriteHeader(response.StatusCode)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		w.Write(data)
 
-		logger.Infof("resp data: %s", string(data))
+		logger.Debugf("resp data: %s", string(data))
 	})
 
 	return nil

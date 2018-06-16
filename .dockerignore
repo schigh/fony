@@ -1,0 +1,7 @@
+# Created by .ignore support plugin (hsz.mobi)
+/sample/
+/docker-compose.yml
+/.git/
+/.idea/
+/vendor/
+/fony.json

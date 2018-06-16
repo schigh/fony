@@ -1,0 +1,18 @@
+version: "3"
+services:
+  fony:
+    build: .
+    container_name: fony-default
+    networks:
+      - local_default
+    ports:
+      - "8888:80"
+    volumes:
+      - .:/go/src/github.com/schigh/fony
+      - ./examples/sample.json:/go/src/github.com/schigh/fony/fony.json
+    environment:
+      - GOBIN=/go/bin
+
+networks:
+  local_default:
+    external: true

@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // FonyPayloadIndexHeader is the index of the payload we wish to see for a given endpoint
@@ -15,19 +17,23 @@ var (
 	suiteFile   string
 	port        string
 	sequenceMap *endpointSequenceMap
-	logger      *zap.Logger
+	logger      *zerolog.Logger
 )
 
 func init() {
+	// logger fields
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	zerolog.MessageFieldName = "msg"
+	zerolog.ErrorFieldName = "error_message"
+	zerolog.TimestampFieldName = "timestamp"
+
 	flag.StringVar(&suiteFile, "f", "./fony.json", "Absolute path to the fony suite file")
 	flag.StringVar(&port, "p", "80", "http port (for local testing)")
 }
 
 func main() {
 	flag.Parse()
-	logger, _ = zap.NewProduction()
-	defer logger.Sync()
-	logger.Info("starting up now")
+	log.Info().Msg("starting up now")
 
 	suite, ok := setupSuite()
 	if !ok {

@@ -1,24 +1,23 @@
 package main
 
 import (
-	"os"
-	"strconv"
-
 	"encoding/json"
-	"fmt"
-	"github.com/labstack/echo"
-	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	"github.com/labstack/echo"
+	"github.com/rs/zerolog/log"
 )
 
 func setupSuite() (*FonySuite, bool) {
 	// this just makes sure the port flag can be parsed to an integer
 	_, convErr := strconv.ParseInt(port, 10, 32)
 	if convErr != nil {
-		logger.Error("fony: error parsing port", zap.String("port", port), zap.Error(convErr))
+		log.Error().Err(convErr).Str("port", port).Msg("[FONY]: error parsing port")
 		return nil, false
 	}
 
@@ -34,7 +33,7 @@ func setupSuite() (*FonySuite, bool) {
 func suiteFromJson(data []byte) (*FonySuite, bool) {
 	suite := &FonySuite{}
 	if jsonErr := json.Unmarshal(data, suite); jsonErr != nil {
-		logger.Error("fony: error unmarshalling json string", zap.Error(jsonErr))
+		log.Error().Err(jsonErr).Bytes("data", data).Msg("[FONY]: error unmarshalling json string")
 		return nil, false
 	}
 
@@ -42,18 +41,18 @@ func suiteFromJson(data []byte) (*FonySuite, bool) {
 }
 
 func suiteFromURL(suiteURL string) (*FonySuite, bool) {
-	logger.Info(fmt.Sprintf("fony: fetching remote suite file located at %s", suiteURL))
+	log.Info().Msgf("[FONY]: fetching remote suite file located at %s", suiteURL)
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, getErr := client.Get(suiteURL)
 	if getErr != nil {
-		logger.Error("fony: error fetching suite url", zap.String("url", suiteURL), zap.Error(getErr))
+		log.Error().Err(getErr).Str("suite_url", suiteURL).Msg("[FONY]: error fetching suite url")
 		return nil, false
 	}
 	defer resp.Body.Close()
 
 	data, readErr := ioutil.ReadAll(resp.Body)
 	if readErr != nil {
-		logger.Error("fony: error reading response", zap.Error(readErr))
+		log.Error().Err(readErr).Msg("[FONY]: error reading response")
 		return nil, false
 	}
 
@@ -62,26 +61,26 @@ func suiteFromURL(suiteURL string) (*FonySuite, bool) {
 	case ".json":
 		return suiteFromJson(data)
 	default:
-		logger.Error(fmt.Sprintf("fony: unknown file type '%s'", ext))
+		log.Error().Str("ext", ext).Msg("[FONY]: unknown suite file type")
 		return nil, false
 	}
 }
 
 func suiteFromFile() (*FonySuite, bool) {
-	logger.Info(fmt.Sprintf("fony: reading suite file: %s", suiteFile))
+	logger.Info().Str("suite_file", suiteFile).Msg("[FONY]: reading suite file")
 	fileInfo, fileErr := os.Stat(suiteFile)
 	if fileErr != nil {
-		logger.Error("fony: file stat error", zap.String("file", suiteFile), zap.Error(fileErr))
+		log.Error().Err(fileErr).Str("suite_file", suiteFile).Msg("[FONY]: file stat error")
 		return nil, false
 	}
 	if fileInfo.IsDir() {
-		logger.Error("fony: suite file is a directory", zap.String("file", suiteFile))
+		logger.Error().Str("suite_file", suiteFile).Msg("[FONY]: suite file is a directory")
 		return nil, false
 	}
 
 	data, readErr := ioutil.ReadFile(suiteFile)
 	if readErr != nil {
-		logger.Error("fony: error reading suite file", zap.Error(readErr))
+		log.Error().Err(readErr).Msg("[FONY]: error reading suite file")
 		return nil, false
 	}
 
@@ -90,7 +89,7 @@ func suiteFromFile() (*FonySuite, bool) {
 	case ".json":
 		return suiteFromJson(data)
 	default:
-		logger.Error(fmt.Sprintf("fony: unknown file type '%s'", ext))
+		log.Error().Str("ext", ext).Msg("[FONY]: unknown file type")
 		return nil, false
 	}
 }
@@ -100,7 +99,7 @@ func registerSuite(suite *FonySuite) (*echo.Echo, bool) {
 	e := echo.New()
 	for _, ep := range suite.Endpoints {
 		if processErr := processEndpoint(ep, e, suite.GlobalHeaders); processErr != nil {
-			logger.Error(fmt.Sprintf("fony: error processing endpoint: %s", ep.URL), zap.Error(processErr))
+			log.Error().Err(processErr).Str("endpoint", ep.URL).Msg("[FONY]: error processing endpoint")
 			return nil, false
 		}
 	}

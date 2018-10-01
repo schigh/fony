@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog/log"
 )
 
 // getEchoFunction will get the appropriate echo handler for the specified verb
@@ -38,7 +38,7 @@ func getEchoFunction(e *echo.Echo, ep *FonyEndpoint) (func(string, echo.HandlerF
 	}
 
 	err := fmt.Errorf("unknown HTTP method %s in endpoint: %+v", verb, ep)
-	logger.Error("unknown method", zap.Error(err))
+	log.Error().Err(err).Str("verb", verb).Str("endpoint", ep.URL).Msg("[FONY]: unable to create route")
 	return nil, err
 }
 
@@ -67,7 +67,7 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 	}
 
 	f(ep.URL, func(ctx echo.Context) error {
-		logger.Info(fmt.Sprintf("%s: %s", ep.Method, ep.URL))
+		log.Info().Str("method", ep.Method).Str("url", ep.URL).Msg("[FONY]: handling request")
 
 		// By default, all responses return this header.  It can be overwritten in the global
 		// headers or the endpoint-specific header
@@ -83,7 +83,7 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 		if indexHeader != "" {
 			index, parseIntErr = strconv.ParseUint(indexHeader, 10, 8)
 			if parseIntErr != nil {
-				logger.Error("fony: error parsing index", zap.Error(parseIntErr))
+				log.Error().Err(parseIntErr).Str("index_header", indexHeader).Msg("[FONY]: error parsing index header")
 				errOut(ctx.Response())
 				return parseIntErr
 			}
@@ -109,7 +109,7 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 			response = &ep.Responses[0]
 		} else {
 			err := fmt.Errorf("there must be at least one response per endpoint")
-			logger.Error("no response", zap.Error(err))
+			log.Error().Err(err).Msg("no response found")
 			errOut(ctx.Response())
 			return err
 		}
@@ -126,7 +126,7 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 				var jsonErr error
 				data, jsonErr = json.Marshal(response.Payload)
 				if jsonErr != nil {
-					logger.Error("payload marshal error", zap.Error(jsonErr))
+					log.Error().Err(jsonErr).Msg("[FONY]: payload marshal error")
 					errOut(ctx.Response())
 					return jsonErr
 				}
@@ -137,8 +137,8 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 				case []byte:
 					data = response.Payload.([]byte)
 				default:
-					err := fmt.Errorf("fony: unable to process payload of type '%T'", response.Payload)
-					logger.Error(err.Error())
+					err := fmt.Errorf("unable to process payload of type '%T'", response.Payload)
+					log.Error().Err(err).Msg("[FONY]: payload error")
 					errOut(ctx.Response())
 					return err
 				}
@@ -158,8 +158,6 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 		ctx.Response().WriteHeader(response.StatusCode)
 		ctx.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		ctx.Response().Write(data)
-
-		logger.Debug("response data", zap.ByteString("data", data))
 		return nil
 	})
 

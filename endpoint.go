@@ -3,37 +3,38 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/labstack/echo"
-	"go.uber.org/zap"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/labstack/echo"
+	"go.uber.org/zap"
 )
 
 // getEchoFunction will get the appropriate echo handler for the specified verb
-func getEchoFunction(e *echo.Echo, ep *FonyEndpoint) (func(path string, h echo.Handler), error) {
+func getEchoFunction(e *echo.Echo, ep *FonyEndpoint) (func(string, echo.HandlerFunc, ...echo.MiddlewareFunc), error) {
 	verb := strings.ToUpper(ep.Method)
 	switch verb {
 	case http.MethodGet:
-		return e.Get, nil
+		return e.GET, nil
 	case http.MethodDelete:
-		return e.Delete, nil
+		return e.DELETE, nil
 	case http.MethodHead:
-		return e.Head, nil
+		return e.HEAD, nil
 	case http.MethodOptions:
-		return e.Options, nil
+		return e.OPTIONS, nil
 	case http.MethodPut:
-		return e.Put, nil
+		return e.PUT, nil
 	case http.MethodPatch:
-		return e.Patch, nil
+		return e.PATCH, nil
 	case http.MethodPost:
-		return e.Post, nil
+		return e.POST, nil
 	case http.MethodTrace:
-		return e.Trace, nil
+		return e.TRACE, nil
 	case http.MethodConnect:
-		return e.Connect, nil
+		return e.CONNECT, nil
 	}
 
 	err := fmt.Errorf("unknown HTTP method %s in endpoint: %+v", verb, ep)
@@ -65,26 +66,26 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 		}
 	}
 
-	f(ep.URL, func(w http.ResponseWriter, r *http.Request) {
+	f(ep.URL, func(ctx echo.Context) error {
 		logger.Info(fmt.Sprintf("%s: %s", ep.Method, ep.URL))
 
 		// By default, all responses return this header.  It can be overwritten in the global
 		// headers or the endpoint-specific header
-		w.Header().Set("Content-Type", "application/json")
+		ctx.Response().Header().Set("Content-Type", "application/json")
 		for k, v := range globals {
-			w.Header().Set(k, v)
+			ctx.Response().Header().Set(k, v)
 		}
 
 		// get the index header if set
-		indexHeader := r.Header.Get(FonyPayloadIndexHeader)
+		indexHeader := ctx.Request().Header.Get(FonyPayloadIndexHeader)
 		var index uint64
 		var parseIntErr error
 		if indexHeader != "" {
 			index, parseIntErr = strconv.ParseUint(indexHeader, 10, 8)
 			if parseIntErr != nil {
 				logger.Error("fony: error parsing index", zap.Error(parseIntErr))
-				errOut(w)
-				return
+				errOut(ctx.Response())
+				return parseIntErr
 			}
 		} else {
 			sequenceMap.Lock()
@@ -109,25 +110,25 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 		} else {
 			err := fmt.Errorf("there must be at least one response per endpoint")
 			logger.Error("no response", zap.Error(err))
-			errOut(w)
-			return
+			errOut(ctx.Response())
+			return err
 		}
 
 		// specific endpoint headers will override globals if set
 		for k := range response.Headers {
-			w.Header().Set(k, response.Headers[k])
+			ctx.Response().Header().Set(k, response.Headers[k])
 		}
 
 		var data []byte
 		if response.Payload != nil {
-			ct := w.Header().Get("Content-Type")
+			ct := ctx.Response().Header().Get("Content-Type")
 			if ct == "application/json" {
 				var jsonErr error
 				data, jsonErr = json.Marshal(response.Payload)
 				if jsonErr != nil {
 					logger.Error("payload marshal error", zap.Error(jsonErr))
-					errOut(w)
-					return
+					errOut(ctx.Response())
+					return jsonErr
 				}
 			} else {
 				switch response.Payload.(type) {
@@ -136,9 +137,10 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 				case []byte:
 					data = response.Payload.([]byte)
 				default:
-					logger.Error(fmt.Sprintf("fony: unable to process payload of type '%T'", response.Payload))
-					errOut(w)
-					return
+					err := fmt.Errorf("fony: unable to process payload of type '%T'", response.Payload)
+					logger.Error(err.Error())
+					errOut(ctx.Response())
+					return err
 				}
 			}
 		}
@@ -153,11 +155,12 @@ func processEndpoint(ep *FonyEndpoint, e *echo.Echo, globals map[string]string) 
 		if response.StatusCode == 0 {
 			response.StatusCode = http.StatusOK
 		}
-		w.WriteHeader(response.StatusCode)
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-		w.Write(data)
+		ctx.Response().WriteHeader(response.StatusCode)
+		ctx.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+		ctx.Response().Write(data)
 
 		logger.Debug("response data", zap.ByteString("data", data))
+		return nil
 	})
 
 	return nil

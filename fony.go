@@ -3,8 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
+
+	"go.uber.org/zap"
 )
 
 // FonyPayloadIndexHeader is the index of the payload we wish to see for a given endpoint
@@ -42,5 +43,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	e.Run(fmt.Sprintf("0.0.0.0:%s", port))
+	e.Start(fmt.Sprintf("0.0.0.0:%s", port))
 }

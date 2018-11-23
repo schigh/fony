@@ -1,0 +1,36 @@
+---
+global_headers:
+  X-Fony: 'true'
+endpoints:
+- url: "/foo/bar"
+  method: GET
+  run_sequential: true
+  responses:
+  - headers:
+      X-Herp: DDDERP
+    payload:
+      foo: bar
+      fizz: buzz
+    status_code: 200
+  - headers:
+      X-Herp: HHHERP
+    payload:
+      foo: bark
+      fizz: moo
+    status_code: 201
+- url: "/herp/derp"
+  method: POST
+  responses:
+  - headers:
+      X-Fony: override
+    payload:
+    - duck: 1
+      cow: true
+      pig: 
+    status_code: 200
+- url: "/i/am/a/teapot"
+  method: GET
+  responses:
+  - payload: 
+    status_code: 418
+

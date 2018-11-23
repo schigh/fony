@@ -1,0 +1,24 @@
+version: '3'
+services:
+  fony-1:
+    container_name: fony-1
+    image: schigh/fony:reroll
+    ports:
+      - "8080:80"
+    volumes:
+      - ./sample.json:/fony.json
+    networks:
+      - fony-default
+  fony-2:
+    container_name: fony-2
+    image: schigh/fony:reroll
+    environment:
+      - SUITE_URL=https://raw.githubusercontent.com/schigh/fony/master/examples/delay.json
+    ports:
+      - "8081:80"
+    networks:
+      - fony-default
+
+networks:
+  fony-default:
+    external: false

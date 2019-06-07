@@ -3,8 +3,12 @@
 
 ![](fony.png)
 
+---
+
 # hey
-I'm no longer maintaining this library since my use case for it has shifted.  If you're interested in taking it over, let me know.
+**I'm no longer maintaining this library since my use case for it has shifted.  If you're interested in taking it over, let me know.**
+
+---
 
 fony is an endpoint simulator for use in integration tests.  
 

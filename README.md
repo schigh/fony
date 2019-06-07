@@ -3,6 +3,9 @@
 
 ![](fony.png)
 
+# hey
+I'm no longer maintaining this library since my use case for it has shifted.  If you're interested in taking it over, let me know.
+
 fony is an endpoint simulator for use in integration tests.  
 
 In a microservice architecture, it is often necessary to spin up several dependent services in order to test _your_ service.  This can quickly become a service dependency nightmare, as you'll then need to bring up the dependencies of your dependencies, and so on, until you end up having to spin up your entire environment.  Being forced to do this will probably make you sad and frustrated.

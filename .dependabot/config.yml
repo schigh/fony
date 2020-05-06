@@ -1,0 +1,12 @@
+# https://dependabot.com/docs/config-file/
+version: 1
+update_configs:
+  - package_manager: "go:modules"
+    directory: "/"
+    update_schedule: "daily"
+    default_reviewers:
+      - "schigh"
+    commit_message:
+      prefix: "app"
+      include_scope: true
+
